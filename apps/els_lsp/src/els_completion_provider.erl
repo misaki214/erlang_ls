@@ -186,7 +186,7 @@ find_completions( Prefix
       definitions(Document, record);
     %% Check for "[...] Variable"
     [{var, _, _} | _] ->
-      variables(Document);
+      variables(Document, Line, Column);
     %% Check for "-anything"
     [{atom, _, _}, {'-', _}] ->
       attributes();
@@ -532,15 +532,42 @@ exported_definitions(Module, POIKind, ExportFormat) ->
 %% Variables
 %%==============================================================================
 
--spec variables(els_dt_document:item()) -> [map()].
-variables(Document) ->
-  POIs = els_dt_document:pois(Document, [variable]),
+-spec variables(els_dt_document:item(), integer(), integer()) -> [map()].
+variables(Document, EditLine, EditColumn) ->
+  POIs = els_dt_document:pois(Document, [variable, folding_range]),
+  FunStartLine = get_fun_start_line(POIs, EditLine, 1),
   Vars = [ #{ label => atom_to_binary(Name, utf8)
             , kind  => ?COMPLETION_ITEM_KIND_VARIABLE
             }
-           || #{id := Name} <- POIs
+           || #{ kind := variable
+               , id := Name
+               , range := #{from := {VarLine, VarColumn}}} <- POIs,
+              (VarLine < EditLine andalso VarLine >= FunStartLine) orelse
+              (VarLine == EditLine andalso VarColumn < EditColumn)
          ],
   lists:usort(Vars).
+
+-spec get_fun_start_line([map()], integer(), integer()) -> integer().
+get_fun_start_line([], _EditLine, FunStartLine) ->
+  FunStartLine;
+get_fun_start_line([#{kind := variable}|Rest], EditLine, FunStartLine) ->
+  get_fun_start_line(Rest, EditLine, FunStartLine);
+get_fun_start_line( [#{ kind := folding_range
+                      , range := #{from := {SLine, _}
+                      , to := {ELine, _}}} | _Rest]
+                  , EditLine
+                  , _FunStartLine)
+  when EditLine >= SLine, EditLine =< ELine ->
+  SLine;
+get_fun_start_line( [#{ kind := folding_range
+                      , range := #{from := {_SLine, _}
+                      , to := {ELine, _}}} | Rest]
+                  , EditLine
+                  , FunStartLine)
+  when ELine < EditLine, ELine > FunStartLine ->
+  get_fun_start_line(Rest, EditLine, ELine);
+get_fun_start_line([_POIs|Rest], EditLine, FunStartLine) ->
+  get_fun_start_line(Rest, EditLine, FunStartLine).
 
 %%==============================================================================
 %%  Record Fields

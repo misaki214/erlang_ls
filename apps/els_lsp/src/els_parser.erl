@@ -68,7 +68,9 @@ parse_forms(Forms) ->
 parse_form({raw_string, Anno, Text}) ->
   Start = erlfmt_scan:get_anno(location, Anno),
   {ok, RangeTokens, _EndLocation} = erl_scan:string(Text, Start, [text]),
-  find_attribute_tokens(RangeTokens);
+  AttributePOIs = find_attribute_tokens(RangeTokens),
+  AtomVarPOIs = find_atom_and_var_tokens(RangeTokens, []),
+  AttributePOIs ++ AtomVarPOIs;
 parse_form(Form) ->
   Tree = els_erlfmt_ast:erlfmt_to_st(Form),
   POIs = points_of_interest(Tree),
@@ -94,6 +96,16 @@ find_attribute_tokens([ {'-', Anno}, {atom, _, spec} | [_|_] = Rest]) ->
   [poi({From, To}, spec, undefined)];
 find_attribute_tokens(_) ->
   [].
+
+-spec find_atom_and_var_tokens([erl_scan:token()], [poi()]) -> [poi()].
+find_atom_and_var_tokens([ {atom, Anno, Name} | Rest], Acc) ->
+  find_atom_and_var_tokens(Rest, [poi(Anno, atom, Name)|Acc]);
+find_atom_and_var_tokens([ {var, Anno, Name} | Rest], Acc) ->
+  find_atom_and_var_tokens(Rest, [poi(Anno, variable, Name)|Acc]);
+find_atom_and_var_tokens([_Ignore | Rest], Acc) ->
+  find_atom_and_var_tokens(Rest, Acc);
+find_atom_and_var_tokens(_, Acc) ->
+  Acc.
 
 %% Inspired by erlfmt_scan:dot_anno
 -spec token_end_location(erl_scan:token()) -> erl_anno:location().
